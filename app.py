@@ -7,6 +7,7 @@ from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from streamlit.runtime.uploaded_file_manager import UploadedFile
+from sentence_transformers import CrossEncoder
 
 
 import chromadb
@@ -97,6 +98,19 @@ def call_llm(context: str, prompt: str):
             break
 
 
+def re_rank_cross_encoders(documents: list[str]) -> tuple[str, list[int]]:
+    relevant_text = ""
+    relevant_text_ids = []
+
+    encoder_model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+    ranks = encoder_model.rank(prompt, documents, top_k=3)
+    for rank in ranks:
+        relevant_text += documents[rank["corpus_id"]]
+        relevant_text_ids.append(rank["corpus_id"])
+
+    return relevant_text, relevant_text_ids
+
+
 if __name__ == "__main__":
     with st.sidebar:
         st.set_page_config(page_title="Chat with PDF", page_icon=":books:")
@@ -120,5 +134,13 @@ if __name__ == "__main__":
     if prompt and ask_btn:
         results = query_collection(prompt)
         context = results.get("documents")[0]
-        response = call_llm(context, prompt)
+        relevant_text, relevant_text_ids = re_rank_cross_encoders(context)
+        response = call_llm(context=relevant_text, prompt=prompt)
         st.write_stream(response)
+
+        with st.expander("See retrieved documents"):
+            st.write(results)
+
+        with st.expander("See most relevant document ids"):
+            st.write(relevant_text_ids)
+            st.write(relevant_text)
