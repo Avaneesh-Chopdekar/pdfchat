@@ -1,6 +1,7 @@
 import os
 import tempfile
 
+import ollama
 import streamlit as st
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_core.documents import Document
@@ -12,6 +13,8 @@ import chromadb
 from chromadb.utils.embedding_functions.ollama_embedding_function import (
     OllamaEmbeddingFunction,
 )
+
+from prompt import system_prompt
 
 
 def process_document(uploaded_file: UploadedFile) -> list[Document]:
@@ -71,9 +74,32 @@ def query_collection(prompt: str, n_results: int = 10) -> chromadb.QueryResult:
     return results
 
 
+def call_llm(context: str, prompt: str):
+    response = ollama.chat(
+        model="gemma3:1b",
+        stream=True,
+        messages=[
+            {
+                "role": "system",
+                "content": system_prompt,
+            },
+            {
+                "role": "user",
+                "content": f"Context: {context}\nQuestion: {prompt}",
+            },
+        ],
+    )
+
+    for chunk in response:
+        if chunk["done"] is False:
+            yield chunk["message"]["content"]
+        else:
+            break
+
+
 if __name__ == "__main__":
     with st.sidebar:
-        st.set_page_config(page_title="Chat with PDF", page_icon="📄")
+        st.set_page_config(page_title="Chat with PDF", page_icon=":books:")
         uploaded_file = st.file_uploader(
             "🔼 Upload your PDF", type=["pdf"], accept_multiple_files=False
         )
@@ -93,4 +119,6 @@ if __name__ == "__main__":
 
     if prompt and ask_btn:
         results = query_collection(prompt)
-        st.write(results)
+        context = results.get("documents")[0]
+        response = call_llm(context, prompt)
+        st.write_stream(response)
